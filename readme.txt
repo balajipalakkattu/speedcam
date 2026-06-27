@@ -1,5 +1,5 @@
 ##to run backend in https
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --ssl-keyfile "C:/DEV/AI-samples/certs/local.key" --ssl-certfile "C:/DEV/AI-samples/certs/local.crt"
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --ssl-keyfile "../../certs/local.key" --ssl-certfile "../../certs/local.crt"
 
 ## to run frontend in https using liveserver in vs code
 ## user preferences (user settings json)
@@ -7,8 +7,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --ssl-keyfile "C:/DEV/AI-samples
 {
     "liveServer.settings.https": {
     "enable": true,
-    "cert": "C:/DEV/AI-samples/certs/local.crt",
-    "key": "C:/DEV/AI-samples/certs/local.key",
+    "cert": "../../certs/local.crt",
+    "key": "../../certs/local.key",
     "passphrase": "admin"
 },
 "liveServer.settings.host": "0.0.0.0",
