@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SpeedCam Web</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .panel {
+            flex: 1;
+            min-width: 300px;
+        }
+
+        .panel img, .panel video {
+            width: 100%;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+        }
+
+        #speed {
+            font-size: 28px;
+            margin-top: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+<h2>SpeedCam</h2>
+<div id="log" style="font-size:14px; background:#eee; padding:10px; height:150px; overflow:auto;"></div>
+<div class="container">
+    <div class="panel">
+        <h3>Live Camera</h3>
+        <video id="video" autoplay playsinline></video>
+    </div>
+
+    <div class="panel">
+        <h3>Raw Frame Sent to Backend</h3>
+        <img id="raw" />
+    </div>
+
+    <div class="panel">
+        <h3>Processed Frame Returned</h3>
+        <img id="processed" />
+    </div>
+</div>
+
+<div id="speed">Speed: 0 mph</div>
+
+<script src="script.js?v=123"></script>
+
+</body>
+</html>
