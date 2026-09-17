@@ -66,7 +66,7 @@ async function sendFrame() {
 
 	let res;
 	try {
-		res = await fetch("https://speedcam.onrender.com:15000/speed/estimate", {
+		res = await fetch("https://speedcam.onrender.com/speed/estimate", {
 			method: "POST",
 			body: formData
 		});
