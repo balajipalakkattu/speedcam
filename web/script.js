@@ -3,23 +3,18 @@ const rawImg = document.getElementById("raw");
 const processedImg = document.getElementById("processed");
 const speedDiv = document.getElementById("speed");
 
+// Wait this long between backend requests. This prevents Render from being
+// overwhelmed while still processing the latest available camera frame.
+const FRAME_INTERVAL_MS = 1000;
+let requestInFlight = false;
+
 function log(msg) {
     const logDiv = document.getElementById("log");
     logDiv.innerHTML += msg + "<br>";
 }
 log("script.js loaded");
 
-log("startCamera() called");
-
 async function startCamera() {
-	document.body.addEventListener("click", () => {
-    navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => {
-            video.srcObject = stream;
-            log("Camera started after user gesture");
-        })
-        .catch(err => log("Camera error: " + err));
-});
     log("Requesting camera...");
     const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" }
@@ -39,53 +34,79 @@ async function startCamera() {
 }
 
 async function sendFrame() {
-	 log("sendFrame() called");
+    if (requestInFlight) {
+        log("Previous request still in progress; skipping frame");
+        return;
+    }
 
     if (video.videoWidth === 0 || video.videoHeight === 0) {
         log("Video not ready yet...");
         return;
     }
-	log("Capturing frame...");
 
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    requestInFlight = true;
 
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0);
+    try {
+        log("Capturing frame...");
 
-    // Show raw frame
-    rawImg.src = canvas.toDataURL("image/jpeg");
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
 
-    // Convert to blob
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg"));
-    const formData = new FormData();
-    formData.append("frame", blob, "frame.jpg");
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0);
 
-    log("Sending frame to backend...");
+        // Show raw frame
+        rawImg.src = canvas.toDataURL("image/jpeg");
 
-	let res;
-	try {
-		res = await fetch("https://speedcam.onrender.com/speed/estimate", {
-			method: "POST",
-			body: formData
-		});
-		log("Response received");
-	} catch (err) {
-		log("Fetch error: " + err);
-		return;
-	}
+        const blob = await new Promise(resolve =>
+            canvas.toBlob(resolve, "image/jpeg")
+        );
+        if (!blob) {
+            log("Could not create image blob");
+            return;
+        }
 
-    const data = await res.json();
+        const formData = new FormData();
+        formData.append("frame", blob, "frame.jpg");
 
-    // Show processed frame
-    processedImg.src = "data:image/jpeg;base64," + data.frame;
+        log("Sending frame to backend...");
+        const res = await fetch("https://speedcam.onrender.com/speed/estimate", {
+            method: "POST",
+            body: formData
+        });
 
-    // Show speed
-    speedDiv.innerText = `Speed: ${data.speed_mph} mph`;
+        if (!res.ok) {
+            throw new Error(`Backend returned ${res.status}`);
+        }
+
+        const data = await res.json();
+        log("Response received");
+
+        // Show processed frame
+        processedImg.src = "data:image/jpeg;base64," + data.frame;
+
+        // Show speed
+        speedDiv.innerText = `Speed: ${data.speed_mph} mph`;
+    } catch (err) {
+        log("Request error: " + err);
+    } finally {
+        requestInFlight = false;
+    }
+}
+
+// Use a timeout scheduled after each request instead of setInterval. This
+// guarantees that requests cannot overlap when the backend is slow.
+async function processFrames() {
+    await sendFrame();
+    setTimeout(processFrames, FRAME_INTERVAL_MS);
 }
 
 (async () => {
-    await startCamera();
-    setInterval(sendFrame, 200);
+    try {
+        await startCamera();
+        processFrames();
+    } catch (err) {
+        log("Camera error: " + err);
+    }
 })();
