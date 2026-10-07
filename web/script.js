@@ -5,7 +5,7 @@ const speedDiv = document.getElementById("speed");
 
 // Wait this long between backend requests. This prevents Render from being
 // overwhelmed while still processing the latest available camera frame.
-const FRAME_INTERVAL_MS = 1000;
+const FRAME_INTERVAL_MS = 100;
 let requestInFlight = false;
 
 function log(msg) {
