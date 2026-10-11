@@ -35,7 +35,7 @@ function connectWebSocket() {
     // Determine WebSocket URL based on current location
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/speed/ws/estimate`;
+    const wsUrl = `${protocol}//speedcam.onrender.com/speed/ws/estimate`;
 
     log(`Connecting to WebSocket: ${wsUrl}`);
 
