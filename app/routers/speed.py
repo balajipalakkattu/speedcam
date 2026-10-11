@@ -6,6 +6,7 @@ from app.utils.image import file_to_cv2
 import cv2
 import base64
 import json
+import numpy as np
 
 router = APIRouter(prefix="/speed", tags=["speed"])
 
@@ -41,24 +42,15 @@ async def websocket_estimate_speed(websocket: WebSocket):
     await websocket.accept()
     try:
         while True:
-            # Receive frame data as base64 string or binary
-            data = await websocket.receive_text()
+            # Receive raw binary image data
+            data = await websocket.receive_bytes()
             
-            # Parse JSON to get frame data
-            message = json.loads(data)
-            frame_data = message.get("frame")
-            
-            if not frame_data:
-                await websocket.send_json({
-                    "error": "No frame data provided"
-                })
+            if not data:
                 continue
             
-            # Decode base64 frame
             try:
-                frame_bytes = base64.b64decode(frame_data)
-                import numpy as np
-                nparr = np.frombuffer(frame_bytes, np.uint8)
+                # Decode image from binary data
+                nparr = np.frombuffer(data, np.uint8)
                 img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 
                 if img is None:
@@ -82,21 +74,24 @@ async def websocket_estimate_speed(websocket: WebSocket):
                 x1, y1, x2, y2 = det
                 cv2.rectangle(img, (x1, y1), (x2, y2), (0,255,0), 2)
             
-            # Encode image to base64
+            # Encode image to base64 for response
             _, buffer = cv2.imencode(".jpg", img)
             jpg_as_text = base64.b64encode(buffer).decode("utf-8")
             
-            # Send response
+            # Send response as JSON
             await websocket.send_json({
                 "speed_mph": speed,
                 "frame": jpg_as_text,
-                "detection": det
+                "detection": det if det else None
             })
     
     except WebSocketDisconnect:
         print("WebSocket client disconnected")
     except Exception as e:
-        await websocket.send_json({
-            "error": f"Processing error: {str(e)}"
-        })
+        try:
+            await websocket.send_json({
+                "error": f"Processing error: {str(e)}"
+            })
+        except:
+            pass
         await websocket.close()
