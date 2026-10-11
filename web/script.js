@@ -3,10 +3,8 @@ const rawImg = document.getElementById("raw");
 const processedImg = document.getElementById("processed");
 const speedDiv = document.getElementById("speed");
 
-// Wait this long between backend requests. This prevents Render from being
-// overwhelmed while still processing the latest available camera frame.
-const FRAME_INTERVAL_MS = 500;
-let requestInFlight = false;
+let ws = null;
+let isConnected = false;
 
 function log(msg) {
     const logDiv = document.getElementById("log");
@@ -33,22 +31,73 @@ async function startCamera() {
     });
 }
 
+function connectWebSocket() {
+    // Determine WebSocket URL based on current location
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/speed/ws/estimate`;
+
+    log(`Connecting to WebSocket: ${wsUrl}`);
+
+    ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
+
+    ws.onopen = () => {
+        log("WebSocket connected");
+        isConnected = true;
+    };
+
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+
+            if (data.error) {
+                log("Server error: " + data.error);
+                return;
+            }
+
+            // Show processed frame
+            if (data.frame) {
+                processedImg.src = "data:image/jpeg;base64," + data.frame;
+            }
+
+            // Show speed
+            if (data.speed_mph !== undefined) {
+                speedDiv.innerText = `Speed: ${data.speed_mph} mph`;
+            }
+
+            // Show detection info if available
+            if (data.detection) {
+                log(`Detection: [${data.detection.join(", ")}]`);
+            }
+        } catch (err) {
+            log("Error parsing WebSocket message: " + err);
+        }
+    };
+
+    ws.onerror = (error) => {
+        log("WebSocket error: " + error);
+        isConnected = false;
+    };
+
+    ws.onclose = () => {
+        log("WebSocket closed");
+        isConnected = false;
+        // Attempt to reconnect after 3 seconds
+        setTimeout(connectWebSocket, 3000);
+    };
+}
+
 async function sendFrame() {
-    if (requestInFlight) {
-        log("Previous request still in progress; skipping frame");
+    if (!isConnected) {
         return;
     }
 
     if (video.videoWidth === 0 || video.videoHeight === 0) {
-        log("Video not ready yet...");
         return;
     }
 
-    requestInFlight = true;
-
     try {
-        log("Capturing frame...");
-
         const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
@@ -59,52 +108,28 @@ async function sendFrame() {
         // Show raw frame
         rawImg.src = canvas.toDataURL("image/jpeg");
 
-        const blob = await new Promise(resolve =>
-            canvas.toBlob(resolve, "image/jpeg")
-        );
-        if (!blob) {
-            log("Could not create image blob");
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append("frame", blob, "frame.jpg");
-
-        log("Sending frame to backend...");
-        const res = await fetch("https://speedcam.onrender.com/speed/estimate", {
-            method: "POST",
-            body: formData
-        });
-
-        if (!res.ok) {
-            throw new Error(`Backend returned ${res.status}`);
-        }
-
-        const data = await res.json();
-        log("Response received");
-
-        // Show processed frame
-        processedImg.src = "data:image/jpeg;base64," + data.frame;
-
-        // Show speed
-        speedDiv.innerText = `Speed: ${data.speed_mph} mph`;
+        // Convert canvas to blob and send as binary
+        canvas.toBlob((blob) => {
+            if (blob && isConnected) {
+                ws.send(blob);
+            }
+        }, "image/jpeg", 0.9);
     } catch (err) {
-        log("Request error: " + err);
-    } finally {
-        requestInFlight = false;
+        log("Frame capture error: " + err);
     }
 }
 
-// Use a timeout scheduled after each request instead of setInterval. This
-// guarantees that requests cannot overlap when the backend is slow.
+// Send frames continuously while connected
 async function processFrames() {
-    await sendFrame();
-    setTimeout(processFrames, FRAME_INTERVAL_MS);
+    sendFrame();
+    // Send frame every 100ms (adjust based on your needs)
+    setTimeout(processFrames, 100);
 }
 
 (async () => {
     try {
         await startCamera();
+        connectWebSocket();
         processFrames();
     } catch (err) {
         log("Camera error: " + err);
