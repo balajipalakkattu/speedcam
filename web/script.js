@@ -1,14 +1,15 @@
 const video = document.getElementById("video");
-const rawImg = document.getElementById("raw");
-const processedImg = document.getElementById("processed");
 const speedDiv = document.getElementById("speed");
 
 let ws = null;
 let isConnected = false;
+let frameInFlight = false;
 
 function log(msg) {
     const logDiv = document.getElementById("log");
-    logDiv.innerHTML += msg + "<br>";
+    logDiv.appendChild(document.createTextNode(msg));
+    logDiv.appendChild(document.createElement("br"));
+    logDiv.scrollTop = logDiv.scrollHeight;
 }
 log("script.js loaded");
 
@@ -32,10 +33,7 @@ async function startCamera() {
 }
 
 function connectWebSocket() {
-    // Determine WebSocket URL based on current location
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const wsUrl = `${protocol}//speedcam.onrender.com/speed/ws/estimate`;
+    const wsUrl = "wss://speedcam.onrender.com/speed/ws/estimate";
 
     log(`Connecting to WebSocket: ${wsUrl}`);
 
@@ -45,9 +43,11 @@ function connectWebSocket() {
     ws.onopen = () => {
         log("WebSocket connected");
         isConnected = true;
+        frameInFlight = false;
     };
 
     ws.onmessage = (event) => {
+        frameInFlight = false;
         try {
             const data = JSON.parse(event.data);
 
@@ -56,19 +56,8 @@ function connectWebSocket() {
                 return;
             }
 
-            // Show processed frame
-            if (data.frame) {
-                processedImg.src = "data:image/jpeg;base64," + data.frame;
-            }
-
-            // Show speed
             if (data.speed_mph !== undefined) {
                 speedDiv.innerText = `Speed: ${data.speed_mph} mph`;
-            }
-
-            // Show detection info if available
-            if (data.detection) {
-                log(`Detection: [${data.detection.join(", ")}]`);
             }
         } catch (err) {
             log("Error parsing WebSocket message: " + err);
@@ -76,20 +65,23 @@ function connectWebSocket() {
     };
 
     ws.onerror = (error) => {
-        log("WebSocket error: " + error);
+        console.error("WebSocket error:", error);
+        log("WebSocket network error; check the browser console and server logs");
         isConnected = false;
     };
 
-    ws.onclose = () => {
-        log("WebSocket closed");
+    ws.onclose = (event) => {
+        const reason = event.reason ? `, reason: ${event.reason}` : "";
+        log(`WebSocket closed (code ${event.code}${reason})`);
         isConnected = false;
+        frameInFlight = false;
         // Attempt to reconnect after 3 seconds
         setTimeout(connectWebSocket, 3000);
     };
 }
 
 async function sendFrame() {
-    if (!isConnected) {
+    if (!isConnected || !ws || ws.readyState !== WebSocket.OPEN || frameInFlight) {
         return;
     }
 
@@ -105,13 +97,19 @@ async function sendFrame() {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(video, 0, 0);
 
-        // Show raw frame
-        rawImg.src = canvas.toDataURL("image/jpeg");
-
-        // Convert canvas to blob and send as binary
+        // Wait for the server response before sending another frame.
+        frameInFlight = true;
         canvas.toBlob((blob) => {
-            if (blob && isConnected) {
+            if (!blob || !isConnected || !ws || ws.readyState !== WebSocket.OPEN) {
+                frameInFlight = false;
+                return;
+            }
+
+            try {
                 ws.send(blob);
+            } catch (err) {
+                frameInFlight = false;
+                log("Frame send error: " + err);
             }
         }, "image/jpeg", 0.9);
     } catch (err) {

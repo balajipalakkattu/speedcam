@@ -4,8 +4,6 @@ from app.services.tracker import VehicleTracker
 from app.services.speed_engine import SpeedEngine
 from app.utils.image import file_to_cv2
 import cv2
-import base64
-import json
 import numpy as np
 
 router = APIRouter(prefix="/speed", tags=["speed"])
@@ -22,19 +20,7 @@ async def estimate_speed(frame: UploadFile = File(...)):
     track = tracker.update(det)
     speed = engine.update(track)
 
-    # Draw bounding box if available
-    if det:
-        x1, y1, x2, y2 = det
-        cv2.rectangle(img, (x1, y1), (x2, y2), (0,255,0), 2)
-
-    # Encode image to base64
-    _, buffer = cv2.imencode(".jpg", img)
-    jpg_as_text = base64.b64encode(buffer).decode("utf-8")
-
-    return {
-        "speed_mph": speed,
-        "frame": jpg_as_text
-    }
+    return {"speed_mph": speed}
 
 
 @router.websocket("/ws/estimate")
@@ -69,20 +55,9 @@ async def websocket_estimate_speed(websocket: WebSocket):
             track = tracker.update(det)
             speed = engine.update(track)
             
-            # Draw bounding box if available
-            if det:
-                x1, y1, x2, y2 = det
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0,255,0), 2)
-            
-            # Encode image to base64 for response
-            _, buffer = cv2.imencode(".jpg", img)
-            jpg_as_text = base64.b64encode(buffer).decode("utf-8")
-            
-            # Send response as JSON
+            # Only send the speed result; the client does not need a processed image.
             await websocket.send_json({
-                "speed_mph": speed,
-                "frame": jpg_as_text,
-                "detection": det if det else None
+                "speed_mph": speed
             })
     
     except WebSocketDisconnect:
