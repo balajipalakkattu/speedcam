@@ -9,6 +9,7 @@ let sendingPaused = false;
 let framesSent = 0;
 let responsesReceived = 0;
 let frameSentAt = null;
+let reconnectAttempt = 0;
 
 function log(msg) {
     const logDiv = document.getElementById("log");
@@ -45,12 +46,18 @@ async function startCamera() {
 }
 
 function connectWebSocket() {
+    if (ws && (ws.readyState === WebSocket.CONNECTING ||
+        ws.readyState === WebSocket.OPEN)) {
+        return;
+    }
+
     const wsUrl = "wss://speedcam.onrender.com/speed/ws/estimate";
 
     log(`Connecting to WebSocket: ${wsUrl}`);
 
     ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";
+    let receivedResponse = false;
 
     ws.onopen = () => {
         log("WebSocket connected");
@@ -60,6 +67,8 @@ function connectWebSocket() {
     };
 
     ws.onmessage = (event) => {
+        receivedResponse = true;
+        reconnectAttempt = 0;
         const responseTime = frameSentAt === null ? null : Date.now() - frameSentAt;
         frameInFlight = false;
         frameSentAt = null;
@@ -100,10 +109,18 @@ function connectWebSocket() {
     ws.onclose = (event) => {
         const reason = event.reason ? `, reason: ${event.reason}` : "";
         log(`WebSocket closed (code ${event.code}${reason})`);
+        if (!receivedResponse) {
+            log(
+                "No API response on this connection. Browser WebSocket APIs hide " +
+                "handshake HTTP status; check Render/proxy logs for 429."
+            );
+        }
         isConnected = false;
         frameInFlight = false;
-        // Attempt to reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
+        const delaySeconds = Math.min(3 * (2 ** Math.min(reconnectAttempt, 5)), 60);
+        reconnectAttempt += 1;
+        log(`Retrying WebSocket in ${delaySeconds} seconds`);
+        setTimeout(connectWebSocket, delaySeconds * 1000);
     };
 }
 
