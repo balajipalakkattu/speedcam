@@ -1,9 +1,14 @@
 const video = document.getElementById("video");
 const speedDiv = document.getElementById("speed");
+const toggleFramesButton = document.getElementById("toggleFrames");
 
 let ws = null;
 let isConnected = false;
 let frameInFlight = false;
+let sendingPaused = false;
+let framesSent = 0;
+let responsesReceived = 0;
+let frameSentAt = null;
 
 function log(msg) {
     const logDiv = document.getElementById("log");
@@ -12,6 +17,13 @@ function log(msg) {
     logDiv.scrollTop = logDiv.scrollHeight;
 }
 log("script.js loaded");
+
+toggleFramesButton.addEventListener("click", () => {
+    sendingPaused = !sendingPaused;
+    toggleFramesButton.textContent = sendingPaused ? "Play" : "Pause";
+    toggleFramesButton.setAttribute("aria-pressed", String(sendingPaused));
+    log(sendingPaused ? "Frame sending paused" : "Frame sending resumed");
+});
 
 async function startCamera() {
     log("Requesting camera...");
@@ -44,10 +56,13 @@ function connectWebSocket() {
         log("WebSocket connected");
         isConnected = true;
         frameInFlight = false;
+        frameSentAt = null;
     };
 
     ws.onmessage = (event) => {
+        const responseTime = frameSentAt === null ? null : Date.now() - frameSentAt;
         frameInFlight = false;
+        frameSentAt = null;
         try {
             const data = JSON.parse(event.data);
 
@@ -57,7 +72,19 @@ function connectWebSocket() {
             }
 
             if (data.speed_mph !== undefined) {
+                responsesReceived += 1;
                 speedDiv.innerText = `Speed: ${data.speed_mph} mph`;
+                if (responsesReceived === 1 || responsesReceived % 10 === 0) {
+                    const detection = data.detected === undefined
+                        ? "detection status unavailable"
+                        : data.detected ? "vehicle detected" : "no vehicle detected";
+                    log(
+                        `API response ${responsesReceived}: ${data.speed_mph} mph, ` +
+                        `${detection}, ${responseTime} ms`
+                    );
+                }
+            } else {
+                log("API response received without speed_mph");
             }
         } catch (err) {
             log("Error parsing WebSocket message: " + err);
@@ -81,7 +108,8 @@ function connectWebSocket() {
 }
 
 async function sendFrame() {
-    if (!isConnected || !ws || ws.readyState !== WebSocket.OPEN || frameInFlight) {
+    if (sendingPaused || !isConnected || !ws ||
+        ws.readyState !== WebSocket.OPEN || frameInFlight) {
         return;
     }
 
@@ -100,15 +128,31 @@ async function sendFrame() {
         // Wait for the server response before sending another frame.
         frameInFlight = true;
         canvas.toBlob((blob) => {
-            if (!blob || !isConnected || !ws || ws.readyState !== WebSocket.OPEN) {
+            if (sendingPaused || !blob || !isConnected || !ws ||
+                ws.readyState !== WebSocket.OPEN) {
                 frameInFlight = false;
                 return;
             }
 
             try {
                 ws.send(blob);
+                framesSent += 1;
+                frameSentAt = Date.now();
+                if (framesSent === 1 || framesSent % 10 === 0) {
+                    log(
+                        `Sent frame ${framesSent}: ${canvas.width}x${canvas.height}, ` +
+                        `${Math.round(blob.size / 1024)} KB`
+                    );
+                }
+                setTimeout(() => {
+                    if (frameInFlight && frameSentAt !== null &&
+                        Date.now() - frameSentAt >= 10000) {
+                        log("No API response for 10 seconds; frame is still pending");
+                    }
+                }, 10000);
             } catch (err) {
                 frameInFlight = false;
+                frameSentAt = null;
                 log("Frame send error: " + err);
             }
         }, "image/jpeg", 0.9);

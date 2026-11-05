@@ -57,7 +57,8 @@ async def websocket_estimate_speed(websocket: WebSocket):
             
             # Only send the speed result; the client does not need a processed image.
             await websocket.send_json({
-                "speed_mph": speed
+                "speed_mph": speed,
+                "detected": det is not None
             })
     
     except WebSocketDisconnect:
