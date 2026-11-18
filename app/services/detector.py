@@ -17,14 +17,10 @@ class Detection:
 class VehicleDetector:
     def __init__(self):
         self.model = YOLO("yolov8n.pt")
-        self.target_classes = [0, 2, 3, 5, 7]  # person, car, motorcycle, bus, truck
 
     def detect(self, frame):
         results = self.model(frame, verbose=False)[0]
-        detections = [
-            box for box in results.boxes
-            if int(box.cls[0]) in self.target_classes
-        ]
+        detections = list(results.boxes)
         if not detections:
             return None
 
