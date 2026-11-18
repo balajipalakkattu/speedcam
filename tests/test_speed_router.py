@@ -94,10 +94,11 @@ class SpeedEndpointTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await speed_router.websocket_estimate_speed(websocket)
 
-        self.assertEqual(
-            websocket.messages,
-            [{"speed_mph": 42.5, "detected": False, "detection": None}],
-        )
+        self.assertEqual(len(websocket.messages), 1)
+        self.assertEqual(websocket.messages[0]["speed_mph"], 42.5)
+        self.assertFalse(websocket.messages[0]["detected"])
+        self.assertIsNone(websocket.messages[0]["detection"])
+        self.assertIsInstance(websocket.messages[0]["processing_ms"], float)
         self.assertTrue(any("WebSocket connected" in line for line in captured.output))
         self.assertTrue(any(
             "WebSocket estimate response sent" in line and "speed_mph=42.5" in line
@@ -126,19 +127,20 @@ class SpeedEndpointTests(unittest.IsolatedAsyncioTestCase):
                 await speed_router.websocket_estimate_speed(websocket)
 
         update_tracker.assert_called_once_with(detection.bbox)
+        self.assertEqual(len(websocket.messages), 1)
+        response = websocket.messages[0]
+        self.assertEqual(response["speed_mph"], 2.5)
+        self.assertTrue(response["detected"])
         self.assertEqual(
-            websocket.messages,
-            [{
-                "speed_mph": 2.5,
-                "detected": True,
-                "detection": {
-                    "class_id": 0,
-                    "class_name": "person",
-                    "confidence": 0.87,
-                    "bbox": (10, 20, 50, 80),
-                },
-            }],
+            response["detection"],
+            {
+                "class_id": 0,
+                "class_name": "person",
+                "confidence": 0.87,
+                "bbox": (10, 20, 50, 80),
+            },
         )
+        self.assertIsInstance(response["processing_ms"], float)
 
 
 if __name__ == "__main__":

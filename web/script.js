@@ -86,12 +86,15 @@ function connectWebSocket() {
                 if (responsesReceived === 1 || responsesReceived % 10 === 0) {
                     const detection = data.detected === undefined
                         ? "detection status unavailable"
-                        : data.detection
+                        : data.detected && data.detection
                             ? `${data.detection.class_name} detected (${(data.detection.confidence * 100).toFixed(1)}%)`
-                            : "no person or vehicle detected";
+                            : data.detected ? "object detected" : "no object detected";
+                    const serverTime = Number.isFinite(data.processing_ms)
+                        ? ` (server ${data.processing_ms} ms)`
+                        : "";
                     log(
                         `API response ${responsesReceived}: ${data.speed_mph} mph, ` +
-                        `${detection}, ${responseTime} ms`
+                        `${detection}, round trip ${responseTime} ms${serverTime}`
                     );
                 }
             } else {

@@ -101,11 +101,13 @@ async def websocket_estimate_speed(websocket: WebSocket):
             det = detector.detect(img)
             track = tracker.update(det.bbox if det is not None else None)
             speed = engine.update(track)
+            processing_ms = (time.perf_counter() - started_at) * 1000
             
             await websocket.send_json({
                 "speed_mph": speed,
                 "detected": det is not None,
                 "detection": _detection_response(det),
+                "processing_ms": round(processing_ms, 1),
             })
             elapsed_ms = (time.perf_counter() - started_at) * 1000
             logger.info(

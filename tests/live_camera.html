@@ -40,7 +40,15 @@
                 }
                 sentFrames += 1;
                 setTimeout(() => this.onmessage?.({
-                    data: JSON.stringify({ speed_mph: 12.5, detected: true })
+                    data: JSON.stringify({
+                        speed_mph: 12.5,
+                        detected: true,
+                        detection: {
+                            class_name: "person",
+                            confidence: 0.9
+                        },
+                        processing_ms: 5
+                    })
                 }), 0);
             }
         }
@@ -59,7 +67,9 @@
                 frameSent: sentFrames > 0,
                 speedUpdated: document.getElementById("speed").textContent === "Speed: 12.5 mph",
                 websocketConnected: logText.includes("WebSocket connected"),
-                apiResponseLogged: logText.includes("API response 1: 12.5 mph, vehicle detected"),
+                apiResponseLogged: logText.includes(
+                    "API response 1: 12.5 mph, person detected (90.0%), round trip"
+                ),
                 pauseButtonAvailable: document.getElementById("toggleFrames").textContent === "Pause"
             };
             const failed = Object.entries(checks).filter(([, passed]) => !passed);
