@@ -2,7 +2,7 @@ import logging
 import time
 
 from fastapi import APIRouter, UploadFile, File, WebSocket, WebSocketDisconnect
-from app.services.detector import VehicleDetector
+from app.services.detector import Detection, VehicleDetector
 from app.services.tracker import VehicleTracker
 from app.services.speed_engine import SpeedEngine
 from app.utils.image import file_to_cv2
@@ -17,16 +17,33 @@ detector = VehicleDetector()
 tracker = VehicleTracker()
 engine = SpeedEngine()
 
+
+def _detection_response(detection: Detection | None) -> dict | None:
+    if detection is None:
+        return None
+
+    return {
+        "class_id": detection.class_id,
+        "class_name": detection.class_name,
+        "confidence": detection.confidence,
+        "bbox": detection.bbox,
+    }
+
+
 @router.post("/estimate")
 async def estimate_speed(frame: UploadFile = File(...)):
     frame_data = await frame.read()
     img = file_to_cv2(frame_data)
 
     det = detector.detect(img)
-    track = tracker.update(det)
+    track = tracker.update(det.bbox if det is not None else None)
     speed = engine.update(track)
 
-    response = {"speed_mph": speed}
+    response = {
+        "speed_mph": speed,
+        "detected": det is not None,
+        "detection": _detection_response(det),
+    }
     logger.info(
         "HTTP speed estimate completed frame_bytes=%d detected=%s speed_mph=%s",
         len(frame_data),
@@ -82,13 +99,13 @@ async def websocket_estimate_speed(websocket: WebSocket):
             
             # Process frame
             det = detector.detect(img)
-            track = tracker.update(det)
+            track = tracker.update(det.bbox if det is not None else None)
             speed = engine.update(track)
             
-            # Only send the speed result; the client does not need a processed image.
             await websocket.send_json({
                 "speed_mph": speed,
-                "detected": det is not None
+                "detected": det is not None,
+                "detection": _detection_response(det),
             })
             elapsed_ms = (time.perf_counter() - started_at) * 1000
             logger.info(

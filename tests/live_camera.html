@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>SpeedCam live camera browser test</title>
+</head>
+<body>
+    <h1>Live camera browser test</h1>
+    <pre id="result">Running...</pre>
+    <div id="log"></div>
+    <video id="video" autoplay playsinline></video>
+    <button id="toggleFrames" type="button" aria-pressed="false">Pause</button>
+    <div id="speed">Speed: 0 mph</div>
+
+    <script>
+        const result = document.getElementById("result");
+        const source = document.createElement("canvas");
+        source.width = 640;
+        source.height = 480;
+        const sourceContext = source.getContext("2d");
+        sourceContext.fillStyle = "#246";
+        sourceContext.fillRect(0, 0, source.width, source.height);
+        sourceContext.fillStyle = "#f90";
+        sourceContext.fillRect(200, 150, 240, 180);
+
+        navigator.mediaDevices.getUserMedia = async () => source.captureStream(10);
+
+        let sentFrames = 0;
+        class TestWebSocket {
+            static OPEN = 1;
+
+            constructor() {
+                this.readyState = TestWebSocket.OPEN;
+                setTimeout(() => this.onopen?.(), 0);
+            }
+
+            send(frame) {
+                if (!(frame instanceof Blob)) {
+                    throw new Error("Expected a JPEG Blob");
+                }
+                sentFrames += 1;
+                setTimeout(() => this.onmessage?.({
+                    data: JSON.stringify({ speed_mph: 12.5, detected: true })
+                }), 0);
+            }
+        }
+        window.WebSocket = TestWebSocket;
+    </script>
+    <script src="../web/script.js"></script>
+    <script>
+        const deadline = Date.now() + 5000;
+        let pauseTestStarted = false;
+        const check = () => {
+            const video = document.getElementById("video");
+            const logText = document.getElementById("log").textContent;
+            const checks = {
+                cameraStreamAttached: Boolean(video.srcObject),
+                videoHasDimensions: video.videoWidth > 0 && video.videoHeight > 0,
+                frameSent: sentFrames > 0,
+                speedUpdated: document.getElementById("speed").textContent === "Speed: 12.5 mph",
+                websocketConnected: logText.includes("WebSocket connected"),
+                apiResponseLogged: logText.includes("API response 1: 12.5 mph, vehicle detected"),
+                pauseButtonAvailable: document.getElementById("toggleFrames").textContent === "Pause"
+            };
+            const failed = Object.entries(checks).filter(([, passed]) => !passed);
+
+            if (failed.length === 0 && !pauseTestStarted) {
+                pauseTestStarted = true;
+                const button = document.getElementById("toggleFrames");
+                button.click();
+                const framesAtPause = sentFrames;
+                setTimeout(() => {
+                    checks.pauseStopsFrames =
+                        sentFrames === framesAtPause &&
+                        button.textContent === "Play" &&
+                        button.getAttribute("aria-pressed") === "true";
+                    button.click();
+                    setTimeout(() => {
+                        checks.playResumesFrames =
+                            sentFrames > framesAtPause &&
+                            button.textContent === "Pause" &&
+                            button.getAttribute("aria-pressed") === "false";
+                        const pauseChecksPassed = checks.pauseStopsFrames &&
+                            checks.playResumesFrames;
+                        result.textContent =
+                            `${pauseChecksPassed ? "PASS" : "FAIL"}\n` +
+                            JSON.stringify(checks, null, 2);
+                    }, 300);
+                }, 300);
+            } else if (failed.length === 0) {
+                return;
+            } else if (Date.now() >= deadline) {
+                result.textContent = `FAIL\n${JSON.stringify(checks, null, 2)}`;
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+        check();
+    </script>
+</body>
+</html>
